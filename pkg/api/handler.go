@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/tonkeeper/claim-api-go/pkg/prover"
 	boc "github.com/tonkeeper/tongo/boc"
@@ -88,6 +89,9 @@ func (h *Handler) GetWalletInfo(ctx context.Context, params oas.GetWalletInfoPar
 	case <-ctx.Done():
 		return nil, BadRequest("timeout")
 	case resp := <-responseCh:
+		if strings.Contains(resp.Err.Error(), "key is not found") {
+			return nil, NotFound("account not not found")
+		}
 		if resp.Err != nil {
 			return nil, InternalError(resp.Err)
 		}

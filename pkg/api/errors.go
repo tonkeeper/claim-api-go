@@ -13,6 +13,13 @@ func BadRequest(msg string) *oas.ErrorStatusCode {
 	}
 }
 
+func NotFound(msg string) *oas.ErrorStatusCode {
+	return &oas.ErrorStatusCode{
+		StatusCode: http.StatusNotFound,
+		Response:   oas.Error{Error: msg},
+	}
+}
+
 func InternalError(err error) *oas.ErrorStatusCode {
 	return &oas.ErrorStatusCode{
 		StatusCode: http.StatusInternalServerError,
