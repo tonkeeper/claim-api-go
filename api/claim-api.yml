@@ -1,0 +1,71 @@
+openapi: 3.0.2
+info:
+  title: Tonkeeper Claim API.
+  version: 0.0.1
+  description: REST API for Mintelss Jetton ClaimApi .
+  contact:
+    name: Support
+    email: support@tonkeeper.com
+paths:
+  /wallet/{address}:
+    get:
+      operationId: getWalletInfo
+      parameters:
+        - name: address
+          in: path
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: TBD
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletInfo'
+        'default':
+          $ref: '#/components/responses/Error'
+
+components:
+  schemas:
+    WalletInfo:
+      type: object
+      required:
+        - owner
+        - jetton_wallet
+        - custom_payload
+      properties:
+        owner:
+          type: string
+        jetton_wallet:
+          type: string
+        custom_payload:
+          type: string
+        state_init:
+          type: string
+        compressed_info:
+          type: object
+          required:
+            - amount
+            - start_from
+            - expired_at
+          properties:
+            amount:
+              type: string
+            start_from:
+              type: string
+            expired_at:
+              type: string
+
+  responses:
+    Error:
+      description: Some error during request processing
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - error
+            properties:
+              error:
+                type: string
