@@ -21,7 +21,8 @@ import (
 type Handler struct {
 	logger *zap.Logger
 
-	prover *prover.Prover
+	prover       *prover.Prover
+	jettonMaster ton.AccountID
 }
 
 type Config struct {
@@ -48,8 +49,9 @@ func NewHandler(logger *zap.Logger, config Config) (*Handler, error) {
 		return nil, fmt.Errorf("failed to create prover: %w", err)
 	}
 	return &Handler{
-		prover: p,
-		logger: logger,
+		prover:       p,
+		logger:       logger,
+		jettonMaster: config.JettonMaster,
 	}, nil
 }
 
@@ -93,6 +95,11 @@ func (h *Handler) GetWalletInfo(ctx context.Context, params oas.GetWalletInfoPar
 		if err != nil {
 			return nil, InternalError(err)
 		}
+		stateInit, err := createStateInit(accountID, h.jettonMaster, h.prover.MerkleRoot())
+		if err != nil {
+			return nil, InternalError(err)
+		}
+
 		compressedInfo := oas.WalletInfoCompressedInfo{
 			Amount:    strconv.FormatUint(uint64(resp.AirdropPayload.Amount), 10),
 			StartFrom: strconv.FormatUint(uint64(resp.AirdropPayload.StartFrom), 10),
@@ -101,10 +108,10 @@ func (h *Handler) GetWalletInfo(ctx context.Context, params oas.GetWalletInfoPar
 		return &oas.WalletInfo{
 			Owner:          accountID.ToRaw(),
 			CustomPayload:  customPayload,
+			StateInit:      oas.NewOptString(stateInit),
 			CompressedInfo: oas.NewOptWalletInfoCompressedInfo(compressedInfo),
 		}, nil
 	}
-
 }
 
 func createCustomPayload(proof []byte) (string, error) {
@@ -123,4 +130,44 @@ func createCustomPayload(proof []byte) (string, error) {
 		return "", err
 	}
 	return customPayload.ToBocBase64()
+}
+
+type JettonData struct {
+	Status              tlb.Uint4
+	Balance             tlb.Grams
+	OwnerAddress        tlb.MsgAddress
+	JettonMasterAddress tlb.MsgAddress
+	MerkleRoot          tlb.Bits256
+}
+
+func createStateInit(owner, minter ton.AccountID, merkleRoot tlb.Bits256) (string, error) {
+	data := JettonData{
+		Status:              0,
+		Balance:             0,
+		OwnerAddress:        owner.ToMsgAddress(),
+		JettonMasterAddress: minter.ToMsgAddress(),
+		MerkleRoot:          merkleRoot,
+	}
+
+	dataCell := boc.NewCell()
+	if err := tlb.Marshal(dataCell, data); err != nil {
+		return "", err
+	}
+	jettonWalletCodeCells, err := boc.DeserializeBocHex("b5ee9c720101010100230008420259c02d4546e62393684b9ec55ae8b1c9d169415ff94502a93a63b0566c27ba15")
+	if err != nil {
+		return "", err
+	}
+	if len(jettonWalletCodeCells) != 1 {
+		return "", fmt.Errorf("unexpected number of cells")
+	}
+
+	state := tlb.StateInit{
+		Code: tlb.Maybe[tlb.Ref[boc.Cell]]{Exists: true, Value: tlb.Ref[boc.Cell]{Value: *jettonWalletCodeCells[0]}},
+		Data: tlb.Maybe[tlb.Ref[boc.Cell]]{Exists: true, Value: tlb.Ref[boc.Cell]{Value: *dataCell}},
+	}
+	c := boc.NewCell()
+	if err := tlb.Marshal(c, state); err != nil {
+		return "", err
+	}
+	return c.ToBocBase64()
 }

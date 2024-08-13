@@ -27,6 +27,7 @@ type Prover struct {
 	root         *boc.Cell
 	queue        *utils.ElasticQueue[ProofRequest]
 	merkleProver *boc.MerkleProver
+	merkleRoot   tlb.Bits256
 }
 
 type Config struct {
@@ -51,6 +52,11 @@ func NewProver(logger *zap.Logger, conf Config) (*Prover, error) {
 	if len(airdropCells) != 1 {
 		return nil, fmt.Errorf("invalid airdrop data, got number of root cells: %v", len(airdropCells))
 	}
+	merkleRoot, err := airdropCells[0].Hash()
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate merkle root: %w", err)
+	}
+	airdropCells[0].ResetCounters()
 	merkleProver, err := boc.NewMerkleProver(airdropCells[0])
 	if err != nil {
 		return nil, fmt.Errorf("failed to create merkle prover: %w", err)
@@ -58,6 +64,7 @@ func NewProver(logger *zap.Logger, conf Config) (*Prover, error) {
 	return &Prover{
 		root:         airdropCells[0],
 		merkleProver: merkleProver,
+		merkleRoot:   tlb.Bits256(merkleRoot),
 		queue:        utils.NewQueue[ProofRequest]("prover", utils.WithMaxLength(1000)),
 	}, nil
 }
@@ -69,6 +76,7 @@ func (p *Prover) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case req := <-p.queue.Output():
+			p.root.ResetCounters()
 			data, proof, err := tlb.ProveKeyInHashmap[AirdropPayload](p.merkleProver, p.root, req.AccountID.ReadRemainingBits())
 			if err != nil {
 				req.ResponseCh <- ProofResponse{
@@ -86,4 +94,8 @@ func (p *Prover) Run(ctx context.Context) {
 
 func (p *Prover) Queue() chan<- ProofRequest {
 	return p.queue.Input()
+}
+
+func (p *Prover) MerkleRoot() tlb.Bits256 {
+	return p.merkleRoot
 }
