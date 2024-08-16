@@ -69,23 +69,23 @@ func (h *Handler) Run(ctx context.Context) {
 	go h.prover.Run(ctx)
 }
 
-func (h *Handler) convertToWalletInfo(accountID ton.AccountID, proof []byte, airdrop prover.AirdropData) (*oas.WalletInfo, error) {
-	customPayload, err := createCustomPayload(proof)
+func (h *Handler) convertToWalletInfo(airdrop prover.WalletAirdrop) (*oas.WalletInfo, error) {
+	customPayload, err := createCustomPayload(airdrop.Proof)
 	if err != nil {
 		return nil, err
 	}
-	stateInit, err := createStateInit(accountID, h.jettonMaster, h.prover.MerkleRoot())
+	stateInit, err := createStateInit(airdrop.AccountID, h.jettonMaster, h.prover.MerkleRoot())
 	if err != nil {
 		return nil, err
 	}
 
 	compressedInfo := oas.WalletInfoCompressedInfo{
-		Amount:    strconv.FormatUint(uint64(airdrop.Amount), 10),
-		StartFrom: strconv.FormatUint(uint64(airdrop.StartFrom), 10),
-		ExpiredAt: strconv.FormatUint(uint64(airdrop.ExpireAt), 10),
+		Amount:    strconv.FormatUint(uint64(airdrop.Data.Amount), 10),
+		StartFrom: strconv.FormatUint(uint64(airdrop.Data.StartFrom), 10),
+		ExpiredAt: strconv.FormatUint(uint64(airdrop.Data.ExpireAt), 10),
 	}
 	return &oas.WalletInfo{
-		Owner:          accountID.ToRaw(),
+		Owner:          airdrop.AccountID.ToRaw(),
 		CustomPayload:  customPayload,
 		StateInit:      oas.NewOptString(stateInit),
 		CompressedInfo: oas.NewOptWalletInfoCompressedInfo(compressedInfo),
@@ -112,7 +112,7 @@ func (h *Handler) GetWalletInfo(ctx context.Context, params oas.GetWalletInfoPar
 		if resp.Err != nil {
 			return nil, InternalError(resp.Err)
 		}
-		info, err := h.convertToWalletInfo(accountID, resp.Proof, resp.AirdropPayload)
+		info, err := h.convertToWalletInfo(resp.WalletAirdrop)
 		if err != nil {
 			return nil, InternalError(err)
 		}
@@ -199,19 +199,19 @@ func (h *Handler) GetWallets(ctx context.Context, params oas.GetWalletsParams) (
 		if resp.Err != nil {
 			return nil, InternalError(resp.Err)
 		}
-		wallets := make([]oas.WalletInfo, 0, len(resp.Airdrop))
-		for _, walletAirdrop := range resp.Airdrop {
-			info, err := h.convertToWalletInfo(walletAirdrop.AccountID, walletAirdrop.Proof, walletAirdrop.Data)
+		infos := make([]oas.WalletInfo, 0, len(resp.WalletAirdrops))
+		for _, walletAirdrop := range resp.WalletAirdrops {
+			info, err := h.convertToWalletInfo(walletAirdrop)
 			if err != nil {
 				return nil, InternalError(err)
 			}
-			wallets = append(wallets, *info)
+			infos = append(infos, *info)
 		}
 		var nextFrom string
 		if !resp.NextFrom.IsZero() {
 			nextFrom = resp.NextFrom.ToRaw()
 		}
-		return &oas.WalletList{Wallets: wallets, NextFrom: nextFrom}, nil
+		return &oas.WalletList{Wallets: infos, NextFrom: nextFrom}, nil
 	}
 
 }

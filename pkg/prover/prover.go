@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tonkeeper/tongo/boc"
 	"github.com/tonkeeper/tongo/tlb"
 	"github.com/tonkeeper/tongo/ton"
@@ -14,9 +15,8 @@ import (
 )
 
 type ProofResponse struct {
-	Proof          []byte
-	AirdropPayload AirdropData
-	Err            error
+	WalletAirdrop WalletAirdrop
+	Err           error
 }
 
 type ProofRequest struct {
@@ -25,9 +25,9 @@ type ProofRequest struct {
 }
 
 type EnumerateResponse struct {
-	Airdrop  []WalletAirdrop
-	NextFrom ton.AccountID
-	Err      error
+	WalletAirdrops []WalletAirdrop
+	NextFrom       ton.AccountID
+	Err            error
 }
 
 type EnumerateRequest struct {
@@ -90,69 +90,6 @@ func NewProver(logger *zap.Logger, conf Config) (*Prover, error) {
 	}, nil
 }
 
-func (p *Prover) Run(ctx context.Context) {
-	go p.queue.Run(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case req := <-p.queue.Output():
-			switch x := req.(type) {
-			case ProofRequest:
-				data, proof, err := prove(x.AccountID, p.merkleProver, p.root)
-				if err != nil {
-					x.ResponseCh <- ProofResponse{
-						Err: err,
-					}
-					continue
-				}
-				x.ResponseCh <- ProofResponse{
-					Proof:          proof,
-					AirdropPayload: data,
-				}
-			case EnumerateRequest:
-				accounts, err := enumerateAccounts(x.NextFrom, p.root, x.Count+1)
-				if err != nil {
-					x.ResponseCh <- EnumerateResponse{
-						Err: err,
-					}
-					continue
-				}
-				allGood := true
-				airdrop := make([]WalletAirdrop, 0, len(accounts))
-				var nextFrom ton.AccountID
-				if len(accounts) == x.Count+1 {
-					nextFrom = accounts[len(accounts)-1]
-					accounts = accounts[:len(accounts)-1]
-				}
-				for _, accountID := range accounts {
-					data, proof, err := prove(accountID, p.merkleProver, p.root)
-					if err != nil {
-						x.ResponseCh <- EnumerateResponse{
-							Err: err,
-						}
-						allGood = false
-						break
-					}
-					airdrop = append(airdrop, WalletAirdrop{
-						AccountID: accountID,
-						Data:      data,
-						Proof:     proof,
-					})
-				}
-				if allGood {
-					x.ResponseCh <- EnumerateResponse{
-						Airdrop:  airdrop,
-						NextFrom: nextFrom,
-					}
-				}
-			default:
-				p.logger.Error("unexpected request type", zap.Any("req", req))
-			}
-		}
-	}
-}
-
 func (p *Prover) Queue() chan<- any {
 	return p.queue.Input()
 }
@@ -161,15 +98,95 @@ func (p *Prover) MerkleRoot() tlb.Bits256 {
 	return p.merkleRoot
 }
 
-func prove(accountID ton.AccountID, prover *boc.MerkleProver, root *boc.Cell) (AirdropData, []byte, error) {
+func (p *Prover) Run(ctx context.Context) {
+	go p.queue.Run(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case reqAny := <-p.queue.Output():
+			switch req := reqAny.(type) {
+			case ProofRequest:
+				p.processProofRequest(req)
+			case EnumerateRequest:
+				p.processEnumerateAccountsRequest(req)
+			default:
+				p.logger.Error("unexpected request type", zap.Any("reqAny", reqAny))
+			}
+		}
+	}
+}
+
+func (p *Prover) processProofRequest(req ProofRequest) {
+	timer := prometheus.NewTimer(prometheus.ObserverFunc(func(v float64) {
+		proverTimeHistogramVec.WithLabelValues("processProofRequest").Observe(v)
+	}))
+	defer timer.ObserveDuration()
+
+	walletAirdrop, err := prove(req.AccountID, p.merkleProver, p.root)
+	if err != nil {
+		req.ResponseCh <- ProofResponse{
+			Err: err,
+		}
+		return
+	}
+	req.ResponseCh <- ProofResponse{
+		WalletAirdrop: walletAirdrop,
+	}
+}
+
+func (p *Prover) processEnumerateAccountsRequest(req EnumerateRequest) {
+	timer := prometheus.NewTimer(prometheus.ObserverFunc(func(v float64) {
+		proverTimeHistogramVec.WithLabelValues("processEnumerateAccountsRequest").Observe(v)
+	}))
+	defer timer.ObserveDuration()
+
+	accounts, err := enumerateAccounts(req.NextFrom, p.root, req.Count+1)
+	if err != nil {
+		req.ResponseCh <- EnumerateResponse{
+			Err: err,
+		}
+		return
+	}
+	var nextFrom ton.AccountID
+	if len(accounts) == req.Count+1 {
+		nextFrom = accounts[len(accounts)-1]
+		accounts = accounts[:len(accounts)-1]
+	}
+	airdrop := make([]WalletAirdrop, 0, len(accounts))
+	for _, accountID := range accounts {
+		walletAirdrop, err := prove(accountID, p.merkleProver, p.root)
+		if err != nil {
+			req.ResponseCh <- EnumerateResponse{
+				Err: err,
+			}
+			return
+		}
+		airdrop = append(airdrop, walletAirdrop)
+	}
+	req.ResponseCh <- EnumerateResponse{
+		WalletAirdrops: airdrop,
+		NextFrom:       nextFrom,
+	}
+}
+
+func prove(accountID ton.AccountID, prover *boc.MerkleProver, root *boc.Cell) (WalletAirdrop, error) {
 	msgAddr := accountID.ToMsgAddress()
 	addrCell := boc.NewCell()
 	if err := tlb.Marshal(addrCell, msgAddr); err != nil {
-		return AirdropData{}, nil, err
+		return WalletAirdrop{}, err
 	}
 	addrCell.ResetCounters()
 	root.ResetCounters()
-	return tlb.ProveKeyInHashmap[AirdropData](prover, root, addrCell.ReadRemainingBits())
+	data, proof, err := tlb.ProveKeyInHashmap[AirdropData](prover, root, addrCell.ReadRemainingBits())
+	if err != nil {
+		return WalletAirdrop{}, err
+	}
+	return WalletAirdrop{
+		AccountID: accountID,
+		Data:      data,
+		Proof:     proof,
+	}, nil
 }
 
 func enumerateAccounts(nextFrom ton.AccountID, root *boc.Cell, count int) ([]ton.AccountID, error) {
