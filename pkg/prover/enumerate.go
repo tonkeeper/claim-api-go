@@ -72,6 +72,10 @@ func readCommonPrefix(size int, c *boc.Cell) (int, *boc.BitString, error) {
 	return int(ln), &bitString, nil
 }
 
+// compareBitStrings returns
+// 0 - key starts with prefix
+// 1 - key > prefix
+// -1 - key < prefix
 func compareBitStrings(key *boc.BitString, prefix *boc.BitString) (int, error) {
 	key.ResetCounter()
 	prefix.ResetCounter()
@@ -166,6 +170,14 @@ func walk(startKey *boc.BitString, prefix *boc.BitString, cell *boc.Cell, count 
 		return nil, err
 	}
 	if size == prefixSize {
+		c, err := compareBitStrings(startKey, currentPrefix)
+		if err != nil {
+			return nil, err
+		}
+		if c == 1 {
+			// key > prefix and we have to skip this wallet.
+			return nil, nil
+		}
 		accountID, err := bitsToAccountID(currentPrefix)
 		if err != nil {
 			return nil, err
