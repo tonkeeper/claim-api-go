@@ -236,3 +236,29 @@ func (s *WalletInfoCompressedInfo) SetStartFrom(val string) {
 func (s *WalletInfoCompressedInfo) SetExpiredAt(val string) {
 	s.ExpiredAt = val
 }
+
+// Ref: #/components/schemas/WalletList
+type WalletList struct {
+	Wallets  []WalletInfo `json:"wallets"`
+	NextFrom string       `json:"next_from"`
+}
+
+// GetWallets returns the value of Wallets.
+func (s *WalletList) GetWallets() []WalletInfo {
+	return s.Wallets
+}
+
+// GetNextFrom returns the value of NextFrom.
+func (s *WalletList) GetNextFrom() string {
+	return s.NextFrom
+}
+
+// SetWallets sets the value of Wallets.
+func (s *WalletList) SetWallets(val []WalletInfo) {
+	s.Wallets = val
+}
+
+// SetNextFrom sets the value of NextFrom.
+func (s *WalletList) SetNextFrom(val string) {
+	s.NextFrom = val
+}

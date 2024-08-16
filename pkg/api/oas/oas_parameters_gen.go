@@ -79,3 +79,121 @@ func decodeGetWalletInfoParams(args [1]string, argsEscaped bool, r *http.Request
 	}
 	return params, nil
 }
+
+// GetWalletsParams is parameters of getWallets operation.
+type GetWalletsParams struct {
+	NextFrom string
+	Count    int
+}
+
+func unpackGetWalletsParams(packed middleware.Parameters) (params GetWalletsParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "next_from",
+			In:   "query",
+		}
+		params.NextFrom = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "count",
+			In:   "query",
+		}
+		params.Count = packed[key].(int)
+	}
+	return params
+}
+
+func decodeGetWalletsParams(args [0]string, argsEscaped bool, r *http.Request) (params GetWalletsParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Decode query: next_from.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "next_from",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.NextFrom = c
+				return nil
+			}); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "next_from",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: count.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "count",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToInt(val)
+				if err != nil {
+					return err
+				}
+
+				params.Count = c
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           5,
+					MaxSet:        true,
+					Max:           10000,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+				}).Validate(int64(params.Count)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "count",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	return params, nil
+}

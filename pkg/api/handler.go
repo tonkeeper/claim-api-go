@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tonkeeper/claim-api-go/pkg/prover"
 	boc "github.com/tonkeeper/tongo/boc"
 	"github.com/tonkeeper/tongo/contract/jetton"
 	"github.com/tonkeeper/tongo/liteapi"
@@ -15,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/tonkeeper/claim-api-go/pkg/api/oas"
+	"github.com/tonkeeper/claim-api-go/pkg/prover"
 )
 
 // Handler handles operations described by OpenAPI v3 specification of this service.
@@ -69,20 +69,37 @@ func (h *Handler) Run(ctx context.Context) {
 	go h.prover.Run(ctx)
 }
 
+func (h *Handler) convertToWalletInfo(accountID ton.AccountID, proof []byte, airdrop prover.AirdropData) (*oas.WalletInfo, error) {
+	customPayload, err := createCustomPayload(proof)
+	if err != nil {
+		return nil, err
+	}
+	stateInit, err := createStateInit(accountID, h.jettonMaster, h.prover.MerkleRoot())
+	if err != nil {
+		return nil, err
+	}
+
+	compressedInfo := oas.WalletInfoCompressedInfo{
+		Amount:    strconv.FormatUint(uint64(airdrop.Amount), 10),
+		StartFrom: strconv.FormatUint(uint64(airdrop.StartFrom), 10),
+		ExpiredAt: strconv.FormatUint(uint64(airdrop.ExpireAt), 10),
+	}
+	return &oas.WalletInfo{
+		Owner:          accountID.ToRaw(),
+		CustomPayload:  customPayload,
+		StateInit:      oas.NewOptString(stateInit),
+		CompressedInfo: oas.NewOptWalletInfoCompressedInfo(compressedInfo),
+	}, nil
+}
+
 func (h *Handler) GetWalletInfo(ctx context.Context, params oas.GetWalletInfoParams) (*oas.WalletInfo, error) {
 	accountID, err := ton.ParseAccountID(params.Address)
 	if err != nil {
 		return nil, BadRequest("failed to parse account id")
 	}
-	msgAddr := accountID.ToMsgAddress()
-	c := boc.NewCell()
-	if err := tlb.Marshal(c, msgAddr); err != nil {
-		return nil, InternalError(err)
-	}
-	c.ResetCounters()
 	responseCh := make(chan prover.ProofResponse, 1)
 	h.prover.Queue() <- prover.ProofRequest{
-		AccountID:  c,
+		AccountID:  accountID,
 		ResponseCh: responseCh,
 	}
 	select {
@@ -95,26 +112,11 @@ func (h *Handler) GetWalletInfo(ctx context.Context, params oas.GetWalletInfoPar
 		if resp.Err != nil {
 			return nil, InternalError(resp.Err)
 		}
-		customPayload, err := createCustomPayload(resp.Proof)
+		info, err := h.convertToWalletInfo(accountID, resp.Proof, resp.AirdropPayload)
 		if err != nil {
 			return nil, InternalError(err)
 		}
-		stateInit, err := createStateInit(accountID, h.jettonMaster, h.prover.MerkleRoot())
-		if err != nil {
-			return nil, InternalError(err)
-		}
-
-		compressedInfo := oas.WalletInfoCompressedInfo{
-			Amount:    strconv.FormatUint(uint64(resp.AirdropPayload.Amount), 10),
-			StartFrom: strconv.FormatUint(uint64(resp.AirdropPayload.StartFrom), 10),
-			ExpiredAt: strconv.FormatUint(uint64(resp.AirdropPayload.ExpireAt), 10),
-		}
-		return &oas.WalletInfo{
-			Owner:          accountID.ToRaw(),
-			CustomPayload:  customPayload,
-			StateInit:      oas.NewOptString(stateInit),
-			CompressedInfo: oas.NewOptWalletInfoCompressedInfo(compressedInfo),
-		}, nil
+		return info, nil
 	}
 }
 
@@ -174,4 +176,42 @@ func createStateInit(owner, minter ton.AccountID, merkleRoot tlb.Bits256) (strin
 		return "", err
 	}
 	return c.ToBocBase64()
+}
+
+func (h *Handler) GetWallets(ctx context.Context, params oas.GetWalletsParams) (*oas.WalletList, error) {
+	next, err := ton.ParseAccountID(params.NextFrom)
+	if err != nil {
+		return nil, BadRequest("failed to parse next from")
+	}
+	ch := make(chan prover.EnumerateResponse, 1)
+	h.prover.Queue() <- prover.EnumerateRequest{
+		NextFrom:   next,
+		Count:      params.Count,
+		ResponseCh: ch,
+	}
+	select {
+	case <-ctx.Done():
+		return nil, BadRequest("timeout")
+	case resp := <-ch:
+		if resp.Err != nil && strings.Contains(resp.Err.Error(), "key is not found") {
+			return nil, NotFound("account not not found")
+		}
+		if resp.Err != nil {
+			return nil, InternalError(resp.Err)
+		}
+		wallets := make([]oas.WalletInfo, 0, len(resp.Airdrop))
+		for _, walletAirdrop := range resp.Airdrop {
+			info, err := h.convertToWalletInfo(walletAirdrop.AccountID, walletAirdrop.Proof, walletAirdrop.Data)
+			if err != nil {
+				return nil, InternalError(err)
+			}
+			wallets = append(wallets, *info)
+		}
+		var nextFrom string
+		if !resp.NextFrom.IsZero() {
+			nextFrom = resp.NextFrom.ToRaw()
+		}
+		return &oas.WalletList{Wallets: wallets, NextFrom: nextFrom}, nil
+	}
+
 }

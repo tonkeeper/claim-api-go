@@ -20,6 +20,13 @@ func (UnimplementedHandler) GetWalletInfo(ctx context.Context, params GetWalletI
 	return r, ht.ErrNotImplemented
 }
 
+// GetWallets implements getWallets operation.
+//
+// GET /wallets
+func (UnimplementedHandler) GetWallets(ctx context.Context, params GetWalletsParams) (r *WalletList, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // NewError creates *ErrorStatusCode from error returned by handler.
 //
 // Used for common default response.

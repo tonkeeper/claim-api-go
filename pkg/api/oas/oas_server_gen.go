@@ -12,6 +12,10 @@ type Handler interface {
 	//
 	// GET /wallet/{address}
 	GetWalletInfo(ctx context.Context, params GetWalletInfoParams) (*WalletInfo, error)
+	// GetWallets implements getWallets operation.
+	//
+	// GET /wallets
+	GetWallets(ctx context.Context, params GetWalletsParams) (*WalletList, error)
 	// NewError creates *ErrorStatusCode from error returned by handler.
 	//
 	// Used for common default response.
