@@ -239,12 +239,12 @@ func (s *WalletInfoCompressedInfo) SetExpiredAt(val string) {
 
 // Ref: #/components/schemas/WalletList
 type WalletList struct {
-	Wallets  []WalletInfo `json:"wallets"`
-	NextFrom string       `json:"next_from"`
+	Wallets  []WalletListWalletsItem `json:"wallets"`
+	NextFrom string                  `json:"next_from"`
 }
 
 // GetWallets returns the value of Wallets.
-func (s *WalletList) GetWallets() []WalletInfo {
+func (s *WalletList) GetWallets() []WalletListWalletsItem {
 	return s.Wallets
 }
 
@@ -254,11 +254,72 @@ func (s *WalletList) GetNextFrom() string {
 }
 
 // SetWallets sets the value of Wallets.
-func (s *WalletList) SetWallets(val []WalletInfo) {
+func (s *WalletList) SetWallets(val []WalletListWalletsItem) {
 	s.Wallets = val
 }
 
 // SetNextFrom sets the value of NextFrom.
 func (s *WalletList) SetNextFrom(val string) {
 	s.NextFrom = val
+}
+
+type WalletListWalletsItem struct {
+	Owner          string                              `json:"owner"`
+	CompressedInfo WalletListWalletsItemCompressedInfo `json:"compressed_info"`
+}
+
+// GetOwner returns the value of Owner.
+func (s *WalletListWalletsItem) GetOwner() string {
+	return s.Owner
+}
+
+// GetCompressedInfo returns the value of CompressedInfo.
+func (s *WalletListWalletsItem) GetCompressedInfo() WalletListWalletsItemCompressedInfo {
+	return s.CompressedInfo
+}
+
+// SetOwner sets the value of Owner.
+func (s *WalletListWalletsItem) SetOwner(val string) {
+	s.Owner = val
+}
+
+// SetCompressedInfo sets the value of CompressedInfo.
+func (s *WalletListWalletsItem) SetCompressedInfo(val WalletListWalletsItemCompressedInfo) {
+	s.CompressedInfo = val
+}
+
+type WalletListWalletsItemCompressedInfo struct {
+	Amount    string `json:"amount"`
+	StartFrom string `json:"start_from"`
+	ExpiredAt string `json:"expired_at"`
+}
+
+// GetAmount returns the value of Amount.
+func (s *WalletListWalletsItemCompressedInfo) GetAmount() string {
+	return s.Amount
+}
+
+// GetStartFrom returns the value of StartFrom.
+func (s *WalletListWalletsItemCompressedInfo) GetStartFrom() string {
+	return s.StartFrom
+}
+
+// GetExpiredAt returns the value of ExpiredAt.
+func (s *WalletListWalletsItemCompressedInfo) GetExpiredAt() string {
+	return s.ExpiredAt
+}
+
+// SetAmount sets the value of Amount.
+func (s *WalletListWalletsItemCompressedInfo) SetAmount(val string) {
+	s.Amount = val
+}
+
+// SetStartFrom sets the value of StartFrom.
+func (s *WalletListWalletsItemCompressedInfo) SetStartFrom(val string) {
+	s.StartFrom = val
+}
+
+// SetExpiredAt sets the value of ExpiredAt.
+func (s *WalletListWalletsItemCompressedInfo) SetExpiredAt(val string) {
+	s.ExpiredAt = val
 }

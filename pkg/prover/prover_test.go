@@ -115,11 +115,11 @@ func Test_enumerateAccounts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root.ResetCounters()
-			accounts, err := enumerateAccounts(tt.nextFrom, root, tt.count)
+			datas, err := enumerateAccounts(tt.nextFrom, root, tt.count)
 			require.Nil(t, err)
-			accs := make([]string, 0, len(accounts))
-			for _, account := range accounts {
-				accs = append(accs, account.ToRaw())
+			accs := make([]string, 0, len(datas))
+			for _, data := range datas {
+				accs = append(accs, data.AccountID.ToRaw())
 			}
 			require.Equal(t, tt.want, accs)
 		})

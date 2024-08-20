@@ -157,7 +157,12 @@ func bitsToAccountID(bitString *boc.BitString) (ton.AccountID, error) {
 	return *accountID, nil
 }
 
-func walk(startKey *boc.BitString, prefix *boc.BitString, cell *boc.Cell, count int) ([]ton.AccountID, error) {
+type walletData struct {
+	AccountID ton.AccountID
+	Data      AirdropData
+}
+
+func walk(startKey *boc.BitString, prefix *boc.BitString, cell *boc.Cell, count int) ([]walletData, error) {
 	startKey.ResetCounter()
 	prefix.ResetCounter()
 	size := startKey.BitsAvailableForRead() - prefix.BitsAvailableForRead()
@@ -182,7 +187,11 @@ func walk(startKey *boc.BitString, prefix *boc.BitString, cell *boc.Cell, count 
 		if err != nil {
 			return nil, err
 		}
-		return []ton.AccountID{accountID}, nil
+		var data AirdropData
+		if err := tlb.Unmarshal(cell, &data); err != nil {
+			return nil, err
+		}
+		return []walletData{{AccountID: accountID, Data: data}}, nil
 	}
 	c, err := compareBitStrings(startKey, currentPrefix)
 	if err != nil {
@@ -208,7 +217,7 @@ func walk(startKey *boc.BitString, prefix *boc.BitString, cell *boc.Cell, count 
 	case 1:
 		return nil, nil
 	}
-	var arrLeft []ton.AccountID
+	var arrLeft []walletData
 	if skipLeft {
 		_, err := cell.NextRef()
 		if err != nil {

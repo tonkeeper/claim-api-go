@@ -141,7 +141,7 @@ func (p *Prover) processEnumerateAccountsRequest(req EnumerateRequest) {
 	}))
 	defer timer.ObserveDuration()
 
-	accounts, err := enumerateAccounts(req.NextFrom, p.root, req.Count+1)
+	walledDatas, err := enumerateAccounts(req.NextFrom, p.root, req.Count+1)
 	if err != nil {
 		req.ResponseCh <- EnumerateResponse{
 			Err: err,
@@ -149,20 +149,16 @@ func (p *Prover) processEnumerateAccountsRequest(req EnumerateRequest) {
 		return
 	}
 	var nextFrom ton.AccountID
-	if len(accounts) == req.Count+1 {
-		nextFrom = accounts[len(accounts)-1]
-		accounts = accounts[:len(accounts)-1]
+	if len(walledDatas) == req.Count+1 {
+		nextFrom = walledDatas[len(walledDatas)-1].AccountID
+		walledDatas = walledDatas[:len(walledDatas)-1]
 	}
-	airdrop := make([]WalletAirdrop, 0, len(accounts))
-	for _, accountID := range accounts {
-		walletAirdrop, err := prove(accountID, p.merkleProver, p.root)
-		if err != nil {
-			req.ResponseCh <- EnumerateResponse{
-				Err: err,
-			}
-			return
-		}
-		airdrop = append(airdrop, walletAirdrop)
+	airdrop := make([]WalletAirdrop, 0, len(walledDatas))
+	for _, data := range walledDatas {
+		airdrop = append(airdrop, WalletAirdrop{
+			AccountID: data.AccountID,
+			Data:      data.Data,
+		})
 	}
 	req.ResponseCh <- EnumerateResponse{
 		WalletAirdrops: airdrop,
@@ -189,7 +185,7 @@ func prove(accountID ton.AccountID, prover *boc.MerkleProver, root *boc.Cell) (W
 	}, nil
 }
 
-func enumerateAccounts(nextFrom ton.AccountID, root *boc.Cell, count int) ([]ton.AccountID, error) {
+func enumerateAccounts(nextFrom ton.AccountID, root *boc.Cell, count int) ([]walletData, error) {
 	root.ResetCounters()
 	prefix := boc.NewBitString(0)
 	startKey, err := accountIDToBitString(nextFrom)

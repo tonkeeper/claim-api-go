@@ -199,19 +199,23 @@ func (h *Handler) GetWallets(ctx context.Context, params oas.GetWalletsParams) (
 		if resp.Err != nil {
 			return nil, InternalError(resp.Err)
 		}
-		infos := make([]oas.WalletInfo, 0, len(resp.WalletAirdrops))
+		items := make([]oas.WalletListWalletsItem, 0, len(resp.WalletAirdrops))
 		for _, walletAirdrop := range resp.WalletAirdrops {
-			info, err := h.convertToWalletInfo(walletAirdrop)
-			if err != nil {
-				return nil, InternalError(err)
+			item := oas.WalletListWalletsItem{
+				Owner: walletAirdrop.AccountID.ToRaw(),
+				CompressedInfo: oas.WalletListWalletsItemCompressedInfo{
+					Amount:    strconv.FormatUint(uint64(walletAirdrop.Data.Amount), 10),
+					StartFrom: strconv.FormatUint(uint64(walletAirdrop.Data.StartFrom), 10),
+					ExpiredAt: strconv.FormatUint(uint64(walletAirdrop.Data.ExpireAt), 10),
+				},
 			}
-			infos = append(infos, *info)
+			items = append(items, item)
 		}
 		var nextFrom string
 		if !resp.NextFrom.IsZero() {
 			nextFrom = resp.NextFrom.ToRaw()
 		}
-		return &oas.WalletList{Wallets: infos, NextFrom: nextFrom}, nil
+		return &oas.WalletList{Wallets: items, NextFrom: nextFrom}, nil
 	}
 
 }

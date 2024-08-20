@@ -63,7 +63,26 @@ components:
         wallets:
           type: array
           items:
-            $ref: '#/components/schemas/WalletInfo'
+            type: object
+            required:
+              - owner
+              - compressed_info
+            properties:
+              owner:
+                type: string
+              compressed_info:
+                type: object
+                required:
+                  - amount
+                  - start_from
+                  - expired_at
+                properties:
+                  amount:
+                    type: string
+                  start_from:
+                    type: string
+                  expired_at:
+                    type: string
         next_from:
           type: string
     WalletInfo:
