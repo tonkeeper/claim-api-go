@@ -4,6 +4,7 @@ go 1.22.0
 
 require (
 	github.com/Code-Hex/go-generics-cache v1.5.1
+	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/caarlos0/env/v6 v6.10.1
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.1.0
@@ -11,7 +12,7 @@ require (
 	github.com/prometheus/client_golang v1.19.1
 	github.com/rs/cors v1.11.0
 	github.com/stretchr/testify v1.9.0
-	github.com/tonkeeper/tongo v1.9.2-0.20240813090128-215bb67f8160
+	github.com/tonkeeper/tongo v1.9.6-0.20240913095748-e4fe80db484b
 	go.opentelemetry.io/otel v1.28.0
 	go.opentelemetry.io/otel/metric v1.28.0
 	go.opentelemetry.io/otel/trace v1.28.0

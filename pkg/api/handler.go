@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/avast/retry-go"
+	"github.com/tonkeeper/tongo/abi"
 	boc "github.com/tonkeeper/tongo/boc"
 	"github.com/tonkeeper/tongo/contract/jetton"
 	"github.com/tonkeeper/tongo/liteapi"
@@ -24,6 +27,7 @@ type Handler struct {
 
 	prover       *prover.Prover
 	jettonMaster ton.AccountID
+	cli          *liteapi.Client
 }
 
 type Config struct {
@@ -38,7 +42,6 @@ func NewHandler(logger *zap.Logger, config Config) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	_ = cli
 	jettonMaster := jetton.New(config.JettonMaster, cli)
 	_ = jettonMaster
 
@@ -51,6 +54,7 @@ func NewHandler(logger *zap.Logger, config Config) (*Handler, error) {
 	}
 	return &Handler{
 		prover:       p,
+		cli:          cli,
 		logger:       logger,
 		jettonMaster: config.JettonMaster,
 	}, nil
@@ -69,16 +73,15 @@ func (h *Handler) Run(ctx context.Context) {
 	go h.prover.Run(ctx)
 }
 
-func (h *Handler) convertToWalletInfo(airdrop prover.WalletAirdrop) (*oas.WalletInfo, error) {
+func (h *Handler) convertToWalletInfo(ctx context.Context, airdrop prover.WalletAirdrop) (*oas.WalletInfo, error) {
 	customPayload, err := createCustomPayload(airdrop.Proof)
 	if err != nil {
 		return nil, err
 	}
-	stateInit, err := createStateInit(airdrop.AccountID, h.jettonMaster, h.prover.MerkleRoot())
+	stateInit, err := h.getStateInit(ctx, airdrop.AccountID)
 	if err != nil {
 		return nil, err
 	}
-
 	compressedInfo := oas.WalletInfoCompressedInfo{
 		Amount:    strconv.FormatUint(uint64(airdrop.Data.Amount), 10),
 		StartFrom: strconv.FormatUint(uint64(airdrop.Data.StartFrom), 10),
@@ -112,7 +115,7 @@ func (h *Handler) GetWalletInfo(ctx context.Context, params oas.GetWalletInfoPar
 		if resp.Err != nil {
 			return nil, InternalError(resp.Err)
 		}
-		info, err := h.convertToWalletInfo(resp.WalletAirdrop)
+		info, err := h.convertToWalletInfo(ctx, resp.WalletAirdrop)
 		if err != nil {
 			return nil, InternalError(err)
 		}
@@ -144,38 +147,6 @@ type JettonData struct {
 	OwnerAddress        tlb.MsgAddress
 	JettonMasterAddress tlb.MsgAddress
 	MerkleRoot          tlb.Bits256
-}
-
-func createStateInit(owner, minter ton.AccountID, merkleRoot tlb.Bits256) (string, error) {
-	data := JettonData{
-		Status:              0,
-		Balance:             0,
-		OwnerAddress:        owner.ToMsgAddress(),
-		JettonMasterAddress: minter.ToMsgAddress(),
-		MerkleRoot:          merkleRoot,
-	}
-
-	dataCell := boc.NewCell()
-	if err := tlb.Marshal(dataCell, data); err != nil {
-		return "", err
-	}
-	jettonWalletCodeCells, err := boc.DeserializeBocHex("b5ee9c720101010100230008420259c02d4546e62393684b9ec55ae8b1c9d169415ff94502a93a63b0566c27ba15")
-	if err != nil {
-		return "", err
-	}
-	if len(jettonWalletCodeCells) != 1 {
-		return "", fmt.Errorf("unexpected number of cells")
-	}
-
-	state := tlb.StateInit{
-		Code: tlb.Maybe[tlb.Ref[boc.Cell]]{Exists: true, Value: tlb.Ref[boc.Cell]{Value: *jettonWalletCodeCells[0]}},
-		Data: tlb.Maybe[tlb.Ref[boc.Cell]]{Exists: true, Value: tlb.Ref[boc.Cell]{Value: *dataCell}},
-	}
-	c := boc.NewCell()
-	if err := tlb.Marshal(c, state); err != nil {
-		return "", err
-	}
-	return c.ToBocBase64()
 }
 
 func (h *Handler) GetWallets(ctx context.Context, params oas.GetWalletsParams) (*oas.WalletList, error) {
@@ -217,5 +188,71 @@ func (h *Handler) GetWallets(ctx context.Context, params oas.GetWalletsParams) (
 		}
 		return &oas.WalletList{Wallets: items, NextFrom: nextFrom}, nil
 	}
+}
 
+func (h *Handler) getStateInit(ctx context.Context, owner ton.AccountID) (string, error) {
+	// TODO: add cache
+	var stateInit boc.Cell
+	err := retry.Do(func() error {
+		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		defer cancel()
+
+		_, value, err := GetWalletStateInitAndSalt(ctx, h.cli, h.jettonMaster, owner.ToMsgAddress())
+		if err != nil {
+			return err
+		}
+		result, ok := value.(GetWalletStateInitAndSaltResult)
+		if !ok {
+			return fmt.Errorf("failed to get state init")
+		}
+		stateInit = boc.Cell(result.StateInit)
+		return nil
+	}, retry.Attempts(3), retry.Delay(1*time.Second))
+	if err != nil {
+		return "", err
+	}
+	return stateInit.ToBocBase64()
+}
+
+type GetWalletStateInitAndSaltResult struct {
+	StateInit tlb.Any
+	Salt      int64
+}
+
+func GetWalletStateInitAndSalt(ctx context.Context, executor abi.Executor, reqAccountID ton.AccountID, ownerAddress tlb.MsgAddress) (string, any, error) {
+	stack := tlb.VmStack{}
+	var (
+		val tlb.VmStackValue
+		err error
+	)
+	val, err = tlb.TlbStructToVmCellSlice(ownerAddress)
+	if err != nil {
+		return "", nil, err
+	}
+	stack.Put(val)
+
+	// MethodID = 69258 for "get_wallet_state_init_and_salt" method
+	errCode, stack, err := executor.RunSmcMethodByID(ctx, reqAccountID, 69258, stack)
+	if err != nil {
+		return "", nil, err
+	}
+	if errCode != 0 && errCode != 1 {
+		return "", nil, fmt.Errorf("method execution failed with code: %v", errCode)
+	}
+	for _, f := range []func(tlb.VmStack) (string, any, error){DecodeGetWalletStateInitAndSaltResult} {
+		s, r, err := f(stack)
+		if err == nil {
+			return s, r, nil
+		}
+	}
+	return "", nil, fmt.Errorf("can not decode outputs")
+}
+
+func DecodeGetWalletStateInitAndSaltResult(stack tlb.VmStack) (resultType string, resultAny any, err error) {
+	if len(stack) != 2 || (stack[0].SumType != "VmStkCell") || (stack[1].SumType != "VmStkTinyInt" && stack[1].SumType != "VmStkInt") {
+		return "", nil, fmt.Errorf("invalid stack format")
+	}
+	var result GetWalletStateInitAndSaltResult
+	err = stack.Unmarshal(&result)
+	return "GetWalletStateInitAndSaltResult", result, err
 }
