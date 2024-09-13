@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/avast/retry-go"
+	"github.com/tonkeeper/tongo"
 	"github.com/tonkeeper/tongo/abi"
 	boc "github.com/tonkeeper/tongo/boc"
 	"github.com/tonkeeper/tongo/contract/jetton"
@@ -82,6 +83,10 @@ func (h *Handler) convertToWalletInfo(ctx context.Context, airdrop prover.Wallet
 	if err != nil {
 		return nil, err
 	}
+	jettonWallet, err := h.getJettonWallet(ctx, airdrop.AccountID)
+	if err != nil {
+		return nil, err
+	}
 	compressedInfo := oas.WalletInfoCompressedInfo{
 		Amount:    strconv.FormatUint(uint64(airdrop.Data.Amount), 10),
 		StartFrom: strconv.FormatUint(uint64(airdrop.Data.StartFrom), 10),
@@ -89,6 +94,7 @@ func (h *Handler) convertToWalletInfo(ctx context.Context, airdrop prover.Wallet
 	}
 	return &oas.WalletInfo{
 		Owner:          airdrop.AccountID.ToRaw(),
+		JettonWallet:   jettonWallet.ToRaw(),
 		CustomPayload:  customPayload,
 		StateInit:      oas.NewOptString(stateInit),
 		CompressedInfo: oas.NewOptWalletInfoCompressedInfo(compressedInfo),
@@ -139,14 +145,6 @@ func createCustomPayload(proof []byte) (string, error) {
 		return "", err
 	}
 	return customPayload.ToBocBase64()
-}
-
-type JettonData struct {
-	Status              tlb.Uint4
-	Balance             tlb.Grams
-	OwnerAddress        tlb.MsgAddress
-	JettonMasterAddress tlb.MsgAddress
-	MerkleRoot          tlb.Bits256
 }
 
 func (h *Handler) GetWallets(ctx context.Context, params oas.GetWalletsParams) (*oas.WalletList, error) {
@@ -255,4 +253,27 @@ func DecodeGetWalletStateInitAndSaltResult(stack tlb.VmStack) (resultType string
 	var result GetWalletStateInitAndSaltResult
 	err = stack.Unmarshal(&result)
 	return "GetWalletStateInitAndSaltResult", result, err
+}
+
+func (h *Handler) getJettonWallet(ctx context.Context, owner ton.AccountID) (ton.AccountID, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	// TODO: add cache
+	_, result, err := abi.GetWalletAddress(ctx, h.cli, h.jettonMaster, owner.ToMsgAddress())
+	if err != nil {
+		return ton.AccountID{}, err
+	}
+	walletAddress, ok := result.(abi.GetWalletAddressResult)
+	if !ok {
+		return ton.AccountID{}, fmt.Errorf("failed get wallet address")
+	}
+	jettonWalletAccountID, err := tongo.AccountIDFromTlb(walletAddress.JettonWalletAddress)
+	if err != nil {
+		return ton.AccountID{}, err
+	}
+	if jettonWalletAccountID == nil {
+		return ton.AccountID{}, fmt.Errorf("failed to resolve jetton wallet")
+	}
+	return *jettonWalletAccountID, nil
 }
