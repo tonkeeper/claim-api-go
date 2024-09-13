@@ -77,17 +77,14 @@ pipeline {
            """
       }
     }
-    stage('docker travesty') {
-      steps {
-        sshagent(['builder']) {
-          sh """
-             ssh -o StrictHostKeyChecking=no ubuntu@claim-api.tonapi.io '
-               sudo /usr/bin/docker compose --project-directory /opt/claim-api pull &&
-               sudo /usr/bin/docker compose --project-directory /opt/claim-api up -d '
-             """
-        }
-      }
-    }
+//    stage('docker travesty') {
+//      steps { sshagent(['builder']) {
+//          sh """
+//             ssh -o StrictHostKeyChecking=no ubuntu@claim-api.tonapi.io '
+//               sudo /usr/bin/docker compose --project-directory /opt/claim-api pull &&
+//               sudo /usr/bin/docker compose --project-directory /opt/claim-api up -d '
+//             """
+//        } } }
   }
   post {
     success {
