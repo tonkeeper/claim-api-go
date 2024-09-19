@@ -8,6 +8,10 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
+	// GetApiInfo implements getApiInfo operation.
+	//
+	// GET /
+	GetApiInfo(ctx context.Context) (GetApiInfoOK, error)
 	// GetWalletInfo implements getWalletInfo operation.
 	//
 	// GET /wallet/{address}

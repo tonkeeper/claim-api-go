@@ -13,6 +13,13 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
+// GetApiInfo implements getApiInfo operation.
+//
+// GET /
+func (UnimplementedHandler) GetApiInfo(ctx context.Context) (r GetApiInfoOK, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetWalletInfo implements getWalletInfo operation.
 //
 // GET /wallet/{address}

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"github.com/tonkeeper/tongo/tvm"
 	"strconv"
 	"strings"
 	"time"
@@ -26,9 +27,22 @@ import (
 type Handler struct {
 	logger *zap.Logger
 
-	prover       *prover.Prover
-	jettonMaster ton.AccountID
-	cli          *liteapi.Client
+	prover                 *prover.Prover
+	jettonMaster           ton.AccountID
+	cli                    *liteapi.Client
+	jettonMasterStateCache map[ton.AccountID][2]string
+	config                 string
+}
+
+func (h *Handler) GetApiInfo(ctx context.Context) (oas.GetApiInfoOK, error) {
+	text := `This is a claim API for TON blockchain. 
+	
+Current url is just a prefix. You can find more details in stadard descriptions:
+
+https://github.com/ton-blockchain/TEPs/pull/181/files
+https://github.com/ton-blockchain/TEPs/pull/180/files
+`
+	return oas.GetApiInfoOK{Data: strings.NewReader(text)}, nil
 }
 
 type Config struct {
@@ -45,7 +59,10 @@ func NewHandler(logger *zap.Logger, config Config) (*Handler, error) {
 	}
 	jettonMaster := jetton.New(config.JettonMaster, cli)
 	_ = jettonMaster
-
+	blockchainConfig, err := getConfig(context.Background(), cli)
+	if err != nil {
+		return nil, err
+	}
 	proverConfig := prover.Config{
 		Filename: config.AirdropFilename,
 	}
@@ -54,10 +71,12 @@ func NewHandler(logger *zap.Logger, config Config) (*Handler, error) {
 		return nil, fmt.Errorf("failed to create prover: %w", err)
 	}
 	return &Handler{
-		prover:       p,
-		cli:          cli,
-		logger:       logger,
-		jettonMaster: config.JettonMaster,
+		prover:                 p,
+		cli:                    cli,
+		logger:                 logger,
+		jettonMaster:           config.JettonMaster,
+		jettonMasterStateCache: map[ton.AccountID][2]string{},
+		config:                 blockchainConfig,
 	}, nil
 }
 
@@ -194,8 +213,11 @@ func (h *Handler) getStateInit(ctx context.Context, owner ton.AccountID) (string
 	err := retry.Do(func() error {
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
-
-		_, value, err := GetWalletStateInitAndSalt(ctx, h.cli, h.jettonMaster, owner.ToMsgAddress())
+		executor, err := h.executor(ctx, h.jettonMaster)
+		if err != nil {
+			return err
+		}
+		_, value, err := GetWalletStateInitAndSalt(ctx, executor, h.jettonMaster, owner.ToMsgAddress())
 		if err != nil {
 			return err
 		}
@@ -260,7 +282,11 @@ func (h *Handler) getJettonWallet(ctx context.Context, owner ton.AccountID) (ton
 	defer cancel()
 
 	// TODO: add cache
-	_, result, err := abi.GetWalletAddress(ctx, h.cli, h.jettonMaster, owner.ToMsgAddress())
+	executor, err := h.executor(ctx, h.jettonMaster)
+	if err != nil {
+		return ton.AccountID{}, err
+	}
+	_, result, err := abi.GetWalletAddress(ctx, executor, h.jettonMaster, owner.ToMsgAddress())
 	if err != nil {
 		return ton.AccountID{}, err
 	}
@@ -276,4 +302,54 @@ func (h *Handler) getJettonWallet(ctx context.Context, owner ton.AccountID) (ton
 		return ton.AccountID{}, fmt.Errorf("failed to resolve jetton wallet")
 	}
 	return *jettonWalletAccountID, nil
+}
+
+func (h *Handler) executor(ctx context.Context, id ton.AccountID) (abi.Executor, error) {
+	state, ok := h.jettonMasterStateCache[id]
+	if !ok {
+		account, err := h.cli.GetAccountState(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		data := account.Account.Account.Storage.State.AccountActive.StateInit.Data.Value.Value
+		code := account.Account.Account.Storage.State.AccountActive.StateInit.Code.Value.Value
+		d, err := data.ToBocBase64()
+		if err != nil {
+			return nil, err
+		}
+		c, err := code.ToBocBase64()
+		if err != nil {
+			return nil, err
+		}
+		state = [2]string{c, d}
+		h.jettonMasterStateCache[id] = state
+	}
+	return tvm.NewEmulatorFromBOCsBase64(state[0], state[1], h.config, tvm.WithLibraryResolver(h.cli))
+}
+
+func getConfig(ctx context.Context, client *liteapi.Client) (string, error) {
+	config, err := client.GetConfigAll(ctx, 0)
+	if err != nil {
+		return "", err
+	}
+	config.CloneKeepingSubsetOfKeys([]uint32{
+		0, 1, 2, 3, 4, 5,
+		8,
+		9, 10,
+		12,
+		15,
+		17,
+		18,
+		20,
+		21,
+		24,
+		25,
+		79, 80, 81, 82,
+	})
+	c := boc.NewCell()
+	err = tlb.Marshal(c, config.Config)
+	if err != nil {
+		return "", err
+	}
+	return c.ToBocBase64()
 }

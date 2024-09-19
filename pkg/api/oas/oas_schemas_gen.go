@@ -4,6 +4,7 @@ package oas
 
 import (
 	"fmt"
+	"io"
 )
 
 func (s *ErrorStatusCode) Error() string {
@@ -48,6 +49,20 @@ func (s *ErrorStatusCode) SetStatusCode(val int) {
 // SetResponse sets the value of Response.
 func (s *ErrorStatusCode) SetResponse(val Error) {
 	s.Response = val
+}
+
+type GetApiInfoOK struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s GetApiInfoOK) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
 }
 
 // NewOptString returns new OptString with value set to v.

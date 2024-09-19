@@ -3,6 +3,7 @@
 package oas
 
 import (
+	"io"
 	"net/http"
 
 	"github.com/go-faster/errors"
@@ -12,6 +13,19 @@ import (
 
 	ht "github.com/ogen-go/ogen/http"
 )
+
+func encodeGetApiInfoResponse(response GetApiInfoOK, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	writer := w
+	if _, err := io.Copy(writer, response); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
 
 func encodeGetWalletInfoResponse(response *WalletInfo, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
