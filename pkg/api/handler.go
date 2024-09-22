@@ -3,10 +3,11 @@ package api
 import (
 	"context"
 	"fmt"
-	"github.com/tonkeeper/tongo/tvm"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tonkeeper/tongo/tvm"
 
 	"github.com/avast/retry-go"
 	"github.com/tonkeeper/tongo"
@@ -94,9 +95,15 @@ func (h *Handler) Run(ctx context.Context) {
 }
 
 func (h *Handler) convertToWalletInfo(ctx context.Context, airdrop prover.WalletAirdrop) (*oas.WalletInfo, error) {
-	customPayload, err := createCustomPayload(airdrop.Proof)
-	if err != nil {
-		return nil, err
+	var err error
+	var customPayload string
+
+	now := time.Now().UTC().Unix()
+	if int64(airdrop.Data.StartFrom) <= now && now <= int64(airdrop.Data.ExpireAt) {
+		customPayload, err = createCustomPayload(airdrop.Proof)
+		if err != nil {
+			return nil, err
+		}
 	}
 	stateInit, err := h.getStateInit(ctx, airdrop.AccountID)
 	if err != nil {
