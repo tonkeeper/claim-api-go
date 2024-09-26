@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tonkeeper/tongo/tvm"
@@ -28,17 +29,19 @@ import (
 type Handler struct {
 	logger *zap.Logger
 
-	prover                 *prover.Prover
-	jettonMaster           ton.AccountID
-	cli                    *liteapi.Client
+	prover       *prover.Prover
+	jettonMaster ton.AccountID
+	cli          *liteapi.Client
+	config       string
+
+	mu                     sync.RWMutex
 	jettonMasterStateCache map[ton.AccountID][2]string
-	config                 string
 }
 
 func (h *Handler) GetApiInfo(ctx context.Context) (oas.GetApiInfoOK, error) {
 	text := `This is a claim API for TON blockchain. 
 	
-Current url is just a prefix. You can find more details in stadard descriptions:
+Current url is just a prefix. You can find more details in standard descriptions:
 
 https://github.com/ton-blockchain/TEPs/pull/181/files
 https://github.com/ton-blockchain/TEPs/pull/180/files
@@ -312,7 +315,7 @@ func (h *Handler) getJettonWallet(ctx context.Context, owner ton.AccountID) (ton
 }
 
 func (h *Handler) executor(ctx context.Context, id ton.AccountID) (abi.Executor, error) {
-	state, ok := h.jettonMasterStateCache[id]
+	state, ok := h.jettonMasterState(id)
 	if !ok {
 		account, err := h.cli.GetAccountState(ctx, id)
 		if err != nil {
@@ -329,7 +332,7 @@ func (h *Handler) executor(ctx context.Context, id ton.AccountID) (abi.Executor,
 			return nil, err
 		}
 		state = [2]string{c, d}
-		h.jettonMasterStateCache[id] = state
+		h.setJettonMasterState(id, state)
 	}
 	return tvm.NewEmulatorFromBOCsBase64(state[0], state[1], h.config, tvm.WithLibraryResolver(h.cli))
 }
@@ -359,4 +362,17 @@ func getConfig(ctx context.Context, client *liteapi.Client) (string, error) {
 		return "", err
 	}
 	return c.ToBocBase64()
+}
+
+func (h *Handler) setJettonMasterState(accountID ton.AccountID, state [2]string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.jettonMasterStateCache[accountID] = state
+}
+
+func (h *Handler) jettonMasterState(accountID ton.AccountID) (state [2]string, ok bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	state, ok = h.jettonMasterStateCache[accountID]
+	return
 }
