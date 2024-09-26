@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tonkeeper/claim-api-go/pkg/utils"
 	"github.com/tonkeeper/tongo/tvm"
 
 	"github.com/avast/retry-go"
@@ -33,6 +34,9 @@ type Handler struct {
 	jettonMaster ton.AccountID
 	cli          *liteapi.Client
 	config       string
+
+	proofsCache      utils.Cache[ton.AccountID, prover.WalletAirdrop]
+	keyNotFoundCache utils.Cache[ton.AccountID, struct{}]
 
 	mu                     sync.RWMutex
 	jettonMasterStateCache map[ton.AccountID][2]string
@@ -81,6 +85,8 @@ func NewHandler(logger *zap.Logger, config Config) (*Handler, error) {
 		jettonMaster:           config.JettonMaster,
 		jettonMasterStateCache: map[ton.AccountID][2]string{},
 		config:                 blockchainConfig,
+		proofsCache:            utils.NewLRUCache[ton.AccountID, prover.WalletAirdrop](700_000, "proofs"),
+		keyNotFoundCache:       utils.NewLRUCache[ton.AccountID, struct{}](700_000, "keyNotFound"),
 	}, nil
 }
 
@@ -135,6 +141,18 @@ func (h *Handler) GetWalletInfo(ctx context.Context, params oas.GetWalletInfoPar
 	if err != nil {
 		return nil, BadRequest("failed to parse account id")
 	}
+
+	if proof, ok := h.proofsCache.Get(accountID); ok {
+		info, err := h.convertToWalletInfo(ctx, proof)
+		if err != nil {
+			return nil, InternalError(err)
+		}
+		return info, nil
+	}
+	if _, ok := h.keyNotFoundCache.Get(accountID); ok {
+		return nil, NotFound("account not found")
+	}
+
 	responseCh := make(chan prover.ProofResponse, 1)
 	h.prover.Queue() <- prover.ProofRequest{
 		AccountID:  accountID,
@@ -145,11 +163,13 @@ func (h *Handler) GetWalletInfo(ctx context.Context, params oas.GetWalletInfoPar
 		return nil, BadRequest("timeout")
 	case resp := <-responseCh:
 		if resp.Err != nil && strings.Contains(resp.Err.Error(), "key is not found") {
-			return nil, NotFound("account not not found")
+			h.keyNotFoundCache.Set(accountID, struct{}{})
+			return nil, NotFound("account not found")
 		}
 		if resp.Err != nil {
 			return nil, InternalError(resp.Err)
 		}
+		h.proofsCache.Set(accountID, resp.WalletAirdrop, utils.WithExpiration(7*time.Minute))
 		info, err := h.convertToWalletInfo(ctx, resp.WalletAirdrop)
 		if err != nil {
 			return nil, InternalError(err)
