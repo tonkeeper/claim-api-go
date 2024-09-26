@@ -16,7 +16,7 @@ type Server struct {
 }
 
 func NewServer(log *zap.Logger, handler *Handler, address string) (*Server, error) {
-	ogenMiddlewares := []oas.Middleware{ogenLoggingMiddleware(log)}
+	ogenMiddlewares := []oas.Middleware{ogenLoggingMiddleware(log), ogenMetricsMiddleware}
 	ogenServer, err := oas.NewServer(handler,
 		oas.WithMiddleware(ogenMiddlewares...))
 
