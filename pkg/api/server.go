@@ -31,7 +31,7 @@ func NewServer(log *zap.Logger, handler *Handler, address string) (*Server, erro
 		logger: log,
 		httpServer: &http.Server{
 			Addr:    address,
-			Handler: cors.Default().Handler(mux),
+			Handler: cors.AllowAll().Handler(mux),
 		},
 	}
 	return &serv, nil
