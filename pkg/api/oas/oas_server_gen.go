@@ -12,6 +12,10 @@ type Handler interface {
 	//
 	// GET /
 	GetApiInfo(ctx context.Context) (GetApiInfoOK, error)
+	// GetState implements getState operation.
+	//
+	// GET /state
+	GetState(ctx context.Context) (*State, error)
 	// GetWalletInfo implements getWalletInfo operation.
 	//
 	// GET /wallet/{address}

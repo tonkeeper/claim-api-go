@@ -254,3 +254,54 @@ func walk(startKey *boc.BitString, prefix *boc.BitString, cell *boc.Cell, count 
 	}
 	return append(arrLeft, arrRight...), nil
 }
+
+func countLeaves(prefix *boc.BitString, cell *boc.Cell) (int, error) {
+	prefix.ResetCounter()
+	size := 267 - prefix.BitsAvailableForRead()
+	prefixSize, nextPrefix, err := readCommonPrefix(size, cell)
+	if err != nil {
+		return 0, err
+	}
+	currentPrefix, err := concatBitStrings(prefix, nextPrefix)
+	if err != nil {
+		return 0, err
+	}
+	if size == prefixSize {
+		return 1, nil
+	}
+
+	left, err := addBit(currentPrefix, false)
+	if err != nil {
+		return 0, err
+	}
+	nxt, err := cell.NextRef()
+	if err != nil {
+		return 0, err // must be unreachable since leaf has been handled before
+	}
+	leftLeaves, err := countLeaves(left, nxt)
+	if err != nil {
+		right, err := addBit(currentPrefix, true)
+		if err != nil {
+			return 0, err
+		}
+		rightLeaves, err := countLeaves(right, nxt)
+		if err != nil {
+			return 0, err
+		}
+
+		return rightLeaves, nil
+	}
+	right, err := addBit(currentPrefix, true)
+	if err != nil {
+		return 0, err
+	}
+	nxt, err = cell.NextRef()
+	if err != nil {
+		return 0, err
+	}
+	rightLeaves, err := countLeaves(right, nxt)
+	if err != nil {
+		return 0, err
+	}
+	return leftLeaves + rightLeaves, nil
+}

@@ -68,6 +68,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			switch elem[0] {
+			case 's': // Prefix: "state"
+				origElem := elem
+				if l := len("state"); len(elem) >= l && elem[0:l] == "state" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch r.Method {
+					case "GET":
+						s.handleGetStateRequest([0]string{}, elemIsEscaped, w, r)
+					default:
+						s.notAllowed(w, r, "GET")
+					}
+
+					return
+				}
+
+				elem = origElem
 			case 'w': // Prefix: "wallet"
 				origElem := elem
 				if l := len("wallet"); len(elem) >= l && elem[0:l] == "wallet" {
@@ -238,6 +259,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 				}
 			}
 			switch elem[0] {
+			case 's': // Prefix: "state"
+				origElem := elem
+				if l := len("state"); len(elem) >= l && elem[0:l] == "state" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch method {
+					case "GET":
+						r.name = "GetState"
+						r.summary = ""
+						r.operationID = "getState"
+						r.pathPattern = "/state"
+						r.args = args
+						r.count = 0
+						return r, true
+					default:
+						return
+					}
+				}
+
+				elem = origElem
 			case 'w': // Prefix: "wallet"
 				origElem := elem
 				if l := len("wallet"); len(elem) >= l && elem[0:l] == "wallet" {

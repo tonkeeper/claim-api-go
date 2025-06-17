@@ -20,6 +20,13 @@ func (UnimplementedHandler) GetApiInfo(ctx context.Context) (r GetApiInfoOK, _ e
 	return r, ht.ErrNotImplemented
 }
 
+// GetState implements getState operation.
+//
+// GET /state
+func (UnimplementedHandler) GetState(ctx context.Context) (r *State, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetWalletInfo implements getWalletInfo operation.
 //
 // GET /wallet/{address}

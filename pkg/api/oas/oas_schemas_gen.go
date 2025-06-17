@@ -157,6 +157,32 @@ func (o OptWalletInfoCompressedInfo) Or(d WalletInfoCompressedInfo) WalletInfoCo
 	return d
 }
 
+// Ref: #/components/schemas/State
+type State struct {
+	TotalWallets  float64 `json:"total_wallets"`
+	MasterAddress string  `json:"master_address"`
+}
+
+// GetTotalWallets returns the value of TotalWallets.
+func (s *State) GetTotalWallets() float64 {
+	return s.TotalWallets
+}
+
+// GetMasterAddress returns the value of MasterAddress.
+func (s *State) GetMasterAddress() string {
+	return s.MasterAddress
+}
+
+// SetTotalWallets sets the value of TotalWallets.
+func (s *State) SetTotalWallets(val float64) {
+	s.TotalWallets = val
+}
+
+// SetMasterAddress sets the value of MasterAddress.
+func (s *State) SetMasterAddress(val string) {
+	s.MasterAddress = val
+}
+
 // Ref: #/components/schemas/WalletInfo
 type WalletInfo struct {
 	Owner          string                      `json:"owner"`

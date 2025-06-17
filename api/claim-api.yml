@@ -63,6 +63,18 @@ paths:
                 $ref: '#/components/schemas/WalletList'
         'default':
           $ref: '#/components/responses/Error'
+  /state:
+    get:
+      operationId: getState
+      responses:
+        '200':
+          description: TBD
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/State'
+        'default':
+          $ref: '#/components/responses/Error'
 
 components:
   schemas:
@@ -125,6 +137,16 @@ components:
               type: string
             expired_at:
               type: string
+    State:
+      type: object
+      required:
+        - total_wallets
+        - master_address
+      properties:
+        total_wallets:
+          type: number
+        master_address:
+          type: string
 
   responses:
     Error:

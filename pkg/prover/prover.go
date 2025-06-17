@@ -98,6 +98,15 @@ func (p *Prover) MerkleRoot() tlb.Bits256 {
 	return p.merkleRoot
 }
 
+func (p *Prover) CountJettonWallets() (int, error) {
+	prefix := boc.NewBitString(0)
+	cnt, err := countLeaves(&prefix, p.root)
+	if err != nil {
+		return 0, err
+	}
+	return cnt, nil
+}
+
 func (p *Prover) Run(ctx context.Context) {
 	go p.queue.Run(ctx)
 	for {

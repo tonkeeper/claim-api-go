@@ -30,10 +30,11 @@ import (
 type Handler struct {
 	logger *zap.Logger
 
-	prover       *prover.Prover
-	jettonMaster ton.AccountID
-	cli          *liteapi.Client
-	config       string
+	prover                *prover.Prover
+	jettonMaster          ton.AccountID
+	jettonWalletsQuantity int
+	cli                   *liteapi.Client
+	config                string
 
 	proofsCache      utils.Cache[ton.AccountID, prover.WalletAirdrop]
 	keyNotFoundCache utils.Cache[ton.AccountID, struct{}]
@@ -78,11 +79,16 @@ func NewHandler(logger *zap.Logger, config Config) (*Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create prover: %w", err)
 	}
+	jettonWalletQuantity, err := p.CountJettonWallets()
+	if err != nil {
+		return nil, fmt.Errorf("failed to count jetton wallets")
+	}
 	return &Handler{
 		prover:                 p,
 		cli:                    cli,
 		logger:                 logger,
 		jettonMaster:           config.JettonMaster,
+		jettonWalletsQuantity:  jettonWalletQuantity,
 		jettonMasterStateCache: map[ton.AccountID][2]string{},
 		config:                 blockchainConfig,
 		proofsCache:            utils.NewLRUCache[ton.AccountID, prover.WalletAirdrop](700_000, "proofs"),
@@ -395,4 +401,12 @@ func (h *Handler) jettonMasterState(accountID ton.AccountID) (state [2]string, o
 	defer h.mu.RUnlock()
 	state, ok = h.jettonMasterStateCache[accountID]
 	return
+}
+
+func (h *Handler) GetState(ctx context.Context) (*oas.State, error) {
+	masterAddress := h.jettonMaster.ToRaw()
+	return &oas.State{
+		TotalWallets:  float64(h.jettonWalletsQuantity),
+		MasterAddress: masterAddress,
+	}, nil
 }
